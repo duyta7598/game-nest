@@ -1,0 +1,35 @@
+name: Windows installer
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0
+          path: .build-tools/vcpkg
+      - name: Bootstrap native dependencies
+        shell: pwsh
+        run: |
+          & .build-tools/vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          "VCPKG_ROOT=$env:GITHUB_WORKSPACE/.build-tools/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: npm ci
+      - run: npm run native:build
+      - run: npm run native:test
+      - run: npm test
+      - run: npm run package:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GameNest-Windows
+          path: release/*.exe

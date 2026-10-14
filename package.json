@@ -1,0 +1,82 @@
+{
+  "name": "gamenest",
+  "version": "0.1.0",
+  "description": "Thư viện game desktop với bộ tải libtorrent tích hợp",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "fix": "biome check --write .",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:desktop": "node scripts/test-desktop.mjs",
+    "native:build": "node scripts/build-native.mjs",
+    "native:test": "node scripts/test-native.mjs",
+    "package:win": "node scripts/check-native.mjs win32 && npm run build && electron-builder --win --x64",
+    "package:mac": "node scripts/check-native.mjs darwin && npm run build && electron-builder --mac --arm64",
+    "preview": "electron-vite preview"
+  },
+  "dependencies": {
+    "cheerio": "1.1.2",
+    "lucide-react": "^0.577.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "44.7.2",
+    "electron-builder": "latest",
+    "electron-vite": "5.0.0",
+    "playwright": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "^7.3.1"
+  },
+  "build": {
+    "appId": "app.gamenest.desktop",
+    "productName": "GameNest",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/bin",
+        "to": "engine",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "GameNest-${version}-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  }
+}

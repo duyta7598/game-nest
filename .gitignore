@@ -1,0 +1,11 @@
+node_modules/
+out/
+release/
+native/build/
+native/bin/
+native/vendor/
+native/vcpkg_installed/
+.build-tools/
+test-results/
+*.log
+.DS_Store
