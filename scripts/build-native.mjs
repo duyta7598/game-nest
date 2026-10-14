@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const native = join(root, 'native');
+const windowsTriplet = 'x64-windows-static-release';
 mkdirSync(join(native, 'bin'), { recursive: true });
 const run = (command, args) => {
   const result = spawnSync(command, args, { stdio: 'inherit', cwd: root });
@@ -52,13 +53,14 @@ if (process.platform === 'darwin' && vendor) {
     );
     if (process.platform === 'win32')
       args.push(
-        '-DVCPKG_TARGET_TRIPLET=x64-windows-static',
+        `-DVCPKG_TARGET_TRIPLET=${windowsTriplet}`,
+        `-DVCPKG_OVERLAY_TRIPLETS=${join(native, 'triplets')}`,
         '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
       );
   }
   run('cmake', args);
   run('cmake', ['--build', join(native, 'build'), '--config', 'Release', '--parallel', '4']);
-  const triplet = process.platform === 'win32' ? 'x64-windows-static' : '';
+  const triplet = process.platform === 'win32' ? windowsTriplet : '';
   const share = join(native, 'build', 'vcpkg_installed', triplet, 'share');
   if (existsSync(share)) {
     const licenses = join(native, 'bin', 'licenses');
