@@ -25,8 +25,11 @@ export interface CatalogPage {
 }
 
 export interface Settings {
+  language: 'en' | 'vi';
   downloadPath: string;
   secureDns: boolean;
+  networkMode: 'auto' | 'direct' | 'proxy';
+  manageWarp: boolean;
   proxyRules: string;
   maxDownloads: number;
   downloadLimit: number;
@@ -100,6 +103,14 @@ export interface GameNestAPI {
   selectFiles(id: string, indexes: number[]): Promise<void>;
   openFolder(id: string): Promise<void>;
   toggleFavorite(game: Game): Promise<Game[]>;
+  prepareNetwork(): Promise<{ ok: boolean; message: string }>;
+  networkStatus(): Promise<{
+    warpInstalled: boolean;
+    warpConnected: boolean;
+    warpProxyMode: boolean;
+    proxyReady: boolean;
+    route: 'direct' | 'proxy';
+  }>;
   testConnection(): Promise<{ ok: boolean; message: string }>;
   onDownloads(listener: (state: DownloadState) => void): () => void;
 }

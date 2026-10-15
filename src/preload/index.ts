@@ -16,6 +16,8 @@ const api: GameNestAPI = {
   selectFiles: (id, indexes) => ipcRenderer.invoke('downloads:select-files', id, indexes),
   openFolder: (id) => ipcRenderer.invoke('downloads:folder', id),
   toggleFavorite: (game) => ipcRenderer.invoke('favorites:toggle', game),
+  prepareNetwork: () => ipcRenderer.invoke('network:prepare'),
+  networkStatus: () => ipcRenderer.invoke('network:status'),
   testConnection: () => ipcRenderer.invoke('network:test'),
   onDownloads: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, state: DownloadState) => listener(state);

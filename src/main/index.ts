@@ -13,6 +13,7 @@ import {
   Tray,
 } from 'electron';
 import { z } from 'zod';
+import { translate } from '../shared/i18n';
 import type {
   DownloadRecord,
   DownloadState,
@@ -23,8 +24,10 @@ import type {
 } from '../shared/types';
 import { Catalog } from './catalog';
 import { TorrentEngine } from './engine';
+import { NetworkRouter } from './network';
 import { SOURCE, sourceUrl, validMagnet } from './parser';
 import { gameSchema, Store, settingsSchema } from './store';
+import { prepareWarp, proxyReady, warpStatus } from './warp';
 
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -36,6 +39,26 @@ let state: DownloadState = { items: [], engineReady: false, engineError: '' };
 const itemErrors = new Map<string, string>();
 const prioritiesApplied = new Set<string>();
 let polling = false;
+let network: NetworkRouter;
+const proxyURL = (settings: Settings) => settings.proxyRules || 'http://127.0.0.1:40000';
+
+function updateTrayMenu() {
+  tray?.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: translate('Mở GameNest', store.settings.language),
+        click: () => {
+          if (!window) createWindow();
+          window?.show();
+        },
+      },
+      {
+        label: translate('Thoát và lưu tiến độ', store.settings.language),
+        click: () => app.quit(),
+      },
+    ]),
+  );
+}
 
 function emit() {
   if (window && !window.isDestroyed()) window.webContents.send('downloads:changed', state);
@@ -104,13 +127,32 @@ async function configure(settings: Settings) {
     secureDnsMode: settings.secureDns ? 'secure' : 'off',
     secureDnsServers: settings.secureDns ? ['https://cloudflare-dns.com/dns-query'] : [],
   });
-  await session
-    .fromPartition('persist:catalog')
-    .setProxy(
-      settings.proxyRules
-        ? { mode: 'fixed_servers', proxyRules: settings.proxyRules }
-        : { mode: 'system' },
+  const direct = session.fromPartition('persist:catalog-direct');
+  const proxy = session.fromPartition('persist:catalog-proxy');
+  await direct.setProxy({ mode: 'direct' });
+  await proxy.setProxy({ mode: 'fixed_servers', proxyRules: proxyURL(settings) });
+  await Promise.all([direct.closeAllConnections(), proxy.closeAllConnections()]);
+  const updateImages = async (route: 'direct' | 'proxy') => {
+    await session.defaultSession.setProxy(
+      route === 'proxy'
+        ? { mode: 'fixed_servers', proxyRules: proxyURL(settings) }
+        : { mode: 'direct' },
     );
+  };
+  await updateImages(settings.networkMode === 'proxy' ? 'proxy' : 'direct');
+  network = new NetworkRouter(settings, {
+    direct: async (url, options) => {
+      const response = await direct.fetch(url, options);
+      await updateImages('direct');
+      return response;
+    },
+    proxy: async (url, options) => {
+      const response = await proxy.fetch(url, options);
+      await updateImages('proxy');
+      return response;
+    },
+    prepare: () => prepareWarp(proxyURL(settings)),
+  });
   if (engine.ready)
     await engine.request('configure', {
       maxDownloads: settings.maxDownloads,
@@ -122,7 +164,7 @@ async function configure(settings: Settings) {
 
 async function fetchPage(url: string) {
   try {
-    const response = await session.fromPartition('persist:catalog').fetch(sourceUrl(url), {
+    const response = await network.fetch(sourceUrl(url), {
       signal: AbortSignal.timeout(25000),
       redirect: 'error',
       headers: {
@@ -191,7 +233,8 @@ function createWindow() {
     minWidth: 840,
     minHeight: 620,
     title: 'GameNest',
-    backgroundColor: '#111416',
+    backgroundColor: '#091a13',
+    icon: join(app.getAppPath(), 'resources', 'icon.png'),
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -252,11 +295,14 @@ function installHandlers(catalog: Catalog) {
       throw new Error('Chọn thư mục tải bằng đường dẫn tuyệt đối.');
     await configure(settings);
     store.saveSettings(settings);
+    updateTrayMenu();
     return settings;
   });
   handle('settings:folder', async () => {
     if (!window) throw new Error('Cửa sổ app đã đóng.');
     const result = await dialog.showOpenDialog(window, {
+      title: translate('Chọn thư mục', store.settings.language),
+      buttonLabel: translate('Chọn thư mục', store.settings.language),
       properties: ['openDirectory', 'createDirectory'],
       defaultPath: store.settings.downloadPath,
     });
@@ -271,11 +317,16 @@ function installHandlers(catalog: Catalog) {
   handle('downloads:magnet', async (value) => {
     const uri = z.string().max(32768).parse(value);
     if (!validMagnet(uri)) throw new Error('Magnet không hợp lệ.');
-    return addDownload(uri, new URL(uri).searchParams.get('dn')?.slice(0, 300) || 'Torrent mới');
+    return addDownload(
+      uri,
+      new URL(uri).searchParams.get('dn')?.slice(0, 300) ||
+        translate('Torrent mới', store.settings.language),
+    );
   });
   handle('downloads:import', async () => {
     if (!window) throw new Error('Cửa sổ app đã đóng.');
     const result = await dialog.showOpenDialog(window, {
+      title: translate('File torrent', store.settings.language),
       properties: ['openFile'],
       filters: [{ name: 'Torrent', extensions: ['torrent'] }],
     });
@@ -327,10 +378,26 @@ function installHandlers(catalog: Catalog) {
     store.saveFavorites();
     return store.favorites;
   });
+  handle('network:status', async () => ({
+    ...(await warpStatus()),
+    proxyReady: await proxyReady(proxyURL(store.settings)),
+    route: network.route,
+  }));
+  handle('network:prepare', async () => {
+    try {
+      await prepareWarp(proxyURL(store.settings));
+      return { ok: true, message: 'WARP đã kết nối ở chế độ proxy cục bộ.' };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  });
   handle('network:test', async () => {
     try {
       await fetchPage(SOURCE);
-      return { ok: true, message: 'Kết nối được FitGirl từ app.' };
+      return {
+        ok: true,
+        message: `Kết nối được FitGirl qua ${network.route === 'proxy' ? 'proxy' : 'mạng trực tiếp'}.`,
+      };
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
@@ -377,25 +444,17 @@ else {
       if (!icon.isEmpty()) {
         tray = new Tray(icon.resize({ width: 20, height: 20 }));
         tray.setToolTip('GameNest');
-        tray.setContextMenu(
-          Menu.buildFromTemplate([
-            {
-              label: 'Mở GameNest',
-              click: () => {
-                if (!window) createWindow();
-                window?.show();
-              },
-            },
-            { label: 'Thoát và lưu tiến độ', click: () => app.quit() },
-          ]),
-        );
+        updateTrayMenu();
         tray.on('click', () => window?.show());
       }
       await poll();
       pollTimer = setInterval(() => void poll(), 1000);
     })
     .catch((error) => {
-      dialog.showErrorBox('GameNest', (error as Error).message);
+      dialog.showErrorBox(
+        'GameNest',
+        translate((error as Error).message, store?.settings.language ?? 'en'),
+      );
       app.quit();
     });
   app.on('activate', () => {

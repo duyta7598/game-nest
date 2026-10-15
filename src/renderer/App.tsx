@@ -24,6 +24,8 @@ import {
   X,
 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import appIcon from '../../resources/icon.png';
+import type { Translator } from '../shared/i18n';
 import type {
   CatalogPage,
   Download,
@@ -33,6 +35,7 @@ import type {
   Settings,
   TorrentFile,
 } from '../shared/types';
+import { LanguageProvider, useTranslation } from './i18n';
 
 type Page = 'library' | 'downloads' | 'favorites' | 'settings';
 const api = window.gamenest;
@@ -45,24 +48,26 @@ const bytes = (value = 0) =>
       : `${Math.round(value / 1024)} KB`;
 const rate = (value = 0) => `${bytes(value)}/s`;
 const percent = (item: Download) => Math.min(100, Math.max(0, (item.progress || 0) * 100));
-const status = (item: Download) =>
+const status = (item: Download, t: Translator) =>
   item.error
-    ? 'Có lỗi'
+    ? t('Có lỗi')
     : item.finished
-      ? 'Hoàn tất'
+      ? t('Hoàn tất')
       : item.paused
-        ? 'Đã tạm dừng'
+        ? t('Đã tạm dừng')
         : item.queued
-          ? 'Đang chờ'
+          ? t('Đang chờ')
           : !item.metadata
-            ? 'Đang tìm metadata'
+            ? t('Đang tìm metadata')
             : item.state === 1 || item.state === 7
-              ? 'Đang kiểm tra'
-              : 'Đang tải';
-const eta = (item: Download) => {
+              ? t('Đang kiểm tra')
+              : t('Đang tải xuống');
+const eta = (item: Download, t: Translator) => {
   if (!item.downloadRate || item.finished || item.paused) return '—';
   const minutes = Math.ceil(((item.total || 0) - (item.downloaded || 0)) / item.downloadRate / 60);
-  return minutes >= 60 ? `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút` : `${minutes} phút`;
+  return minutes >= 60
+    ? t('{0} giờ {1} phút', { '0': Math.floor(minutes / 60), '1': minutes % 60 })
+    : t('{0} phút', { '0': minutes });
 };
 
 function Cover({
@@ -104,6 +109,7 @@ function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
   const labelId = useRef(`modal-${Math.random().toString(36).slice(2)}`);
   useEffect(() => {
@@ -119,7 +125,7 @@ function Modal({
     >
       <div className="modal-head">
         <h2 id={labelId.current}>{title}</h2>
-        <button className="icon-button" aria-label="Đóng" onClick={close}>
+        <button className="icon-button" aria-label={t('Đóng')} onClick={close}>
           <X />
         </button>
       </div>
@@ -129,7 +135,32 @@ function Modal({
 }
 
 export function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
+  );
+}
+
+function AppContent() {
+  const { t, language, setLanguage } = useTranslation();
   const [page, setPage] = useState<Page>('library');
+  const [connection, setConnection] = useState<Awaited<
+    ReturnType<typeof api.networkStatus>
+  > | null>(null);
+  useEffect(() => {
+    if (page !== 'settings') return;
+    let active = true;
+    void api
+      .networkStatus()
+      .then((value) => {
+        if (active) setConnection(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [page]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [downloads, setDownloads] = useState<DownloadState>({
@@ -142,7 +173,7 @@ export function App() {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [number, setNumber] = useState(1);
-  const [genre, setGenre] = useState('Tất cả');
+  const [genre, setGenre] = useState('__all__');
   const [loading, setLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
   const [message, setMessage] = useState('');
@@ -166,6 +197,7 @@ export function App() {
     api
       .bootstrap()
       .then((value) => {
+        setLanguage(value.settings.language || 'en');
         setSettings(value.settings);
         setDraft(value.settings);
         setFavorites(value.favorites);
@@ -174,7 +206,7 @@ export function App() {
       })
       .catch((error) => setMessage(error.message));
     return off;
-  }, []);
+  }, [setLanguage]);
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(query.trim());
@@ -262,8 +294,8 @@ export function App() {
   const active = downloads.items.filter((item) => !item.finished);
   const featured = catalog?.games[0];
   const allGames = page === 'favorites' ? favorites : catalog?.games || [];
-  const displayed = allGames.filter((game) => genre === 'Tất cả' || game.genres.includes(genre));
-  const genres = ['Tất cả', ...new Set(allGames.flatMap((game) => game.genres))].slice(0, 7);
+  const displayed = allGames.filter((game) => genre === '__all__' || game.genres.includes(genre));
+  const genres = ['__all__', ...new Set(allGames.flatMap((game) => game.genres))].slice(0, 7);
   const inFavorites = (game: Game) => favorites.some((g) => g.id === game.id);
 
   function gameCard(game: Game) {
@@ -272,18 +304,22 @@ export function App() {
         <button
           className="poster-button"
           onClick={() => void openDetail(game)}
-          aria-label={`Xem ${game.title}`}
+          aria-label={t('Xem {0}', { 0: game.title })}
         >
           <Cover game={game} />
           <span className="poster-overlay">
-            <span>Xem chi tiết</span>
+            <span>{t('Xem chi tiết')}</span>
             <ArrowRight />
           </span>
         </button>
         <button
           className={`save-game ${inFavorites(game) ? 'saved' : ''}`}
           onClick={() => void perform(() => favorite(game))}
-          aria-label={inFavorites(game) ? `Bỏ yêu thích ${game.title}` : `Yêu thích ${game.title}`}
+          aria-label={
+            inFavorites(game)
+              ? t('Bỏ yêu thích {0}', { '0': game.title })
+              : t('Yêu thích {0}', { '0': game.title })
+          }
           aria-pressed={inFavorites(game)}
         >
           <Heart />
@@ -294,16 +330,20 @@ export function App() {
           </button>
           <p>{game.genres.slice(0, 2).join(' · ') || 'Windows'}</p>
           <div className="card-bottom">
-            <span>{game.repackSize || 'Xem dung lượng'}</span>
+            <span>{game.repackSize || t('Xem dung lượng')}</span>
             <button
               className="download-small"
               disabled={busy || !downloads.engineReady}
               onClick={() =>
-                void perform(() => api.startDownload(game.url, 0), 'Đã thêm game vào hàng đợi tải.')
+                void perform(
+                  () => api.startDownload(game.url, 0),
+                  t('Đã thêm game vào hàng đợi tải.'),
+                )
               }
-              aria-label={`Tải ${game.title}`}
+              aria-label={t('Tải {0}', { '0': game.title })}
             >
-              <ArrowDown /> Tải
+              <ArrowDown />
+              {t('Tải')}{' '}
             </button>
           </div>
         </div>
@@ -315,17 +355,15 @@ export function App() {
     <div className="app-shell">
       <header className="app-header">
         <button className="brand" onClick={() => setPage('library')}>
-          <span className="brand-icon">
-            <Gamepad2 />
-          </span>
+          <img className="brand-icon" src={appIcon} alt="" />
           GameNest<span className="brand-beta">BETA</span>
         </button>
-        <nav aria-label="Điều hướng chính">
+        <nav aria-label={t('Điều hướng chính')}>
           {(
             [
-              ['library', 'Khám phá'],
-              ['downloads', 'Đang tải'],
-              ['favorites', 'Yêu thích'],
+              ['library', t('Khám phá')],
+              ['downloads', t('Đang tải')],
+              ['favorites', t('Yêu thích')],
             ] as [Page, string][]
           ).map(([value, label]) => (
             <button
@@ -343,11 +381,11 @@ export function App() {
         <div className="header-end">
           <span className={`engine-state ${downloads.engineReady ? 'online' : ''}`}>
             <i />
-            {downloads.engineReady ? 'Bộ tải sẵn sàng' : 'Bộ tải chưa sẵn sàng'}
+            {downloads.engineReady ? t('Bộ tải sẵn sàng') : t('Bộ tải chưa sẵn sàng')}
           </span>
           <button
             className={`icon-button ${page === 'settings' ? 'active' : ''}`}
-            aria-label="Cài đặt"
+            aria-label={t('Cài đặt')}
             onClick={() => setPage('settings')}
           >
             <Settings2 />
@@ -357,8 +395,12 @@ export function App() {
       {message && (
         <div className="toast" role="status">
           <CircleAlert />
-          <span>{message}</span>
-          <button className="icon-button" aria-label="Ẩn thông báo" onClick={() => setMessage('')}>
+          <span>{t(message)}</span>
+          <button
+            className="icon-button"
+            aria-label={t('Ẩn thông báo')}
+            onClick={() => setMessage('')}
+          >
             <X />
           </button>
         </div>
@@ -366,7 +408,7 @@ export function App() {
       {downloads.engineError && (
         <div className="banner error" role="alert">
           <CircleAlert />
-          <span>{downloads.engineError}</span>
+          <span>{t(downloads.engineError)}</span>
         </div>
       )}
 
@@ -386,14 +428,14 @@ export function App() {
               <div className="hero-content">
                 <span className="eyebrow">
                   <span />
-                  MỚI CẬP NHẬT TRÊN FITGIRL
+                  {t('MỚI CẬP NHẬT TRÊN FITGIRL')}{' '}
                 </span>
                 <h1>{shortTitle(featured.title)}</h1>
                 <p className="hero-tags">
-                  {featured.genres.slice(0, 3).join(' / ') || 'Khám phá game mới'}
+                  {featured.genres.slice(0, 3).join(' / ') || t('Khám phá game mới')}
                 </p>
                 <p className="hero-meta">
-                  {featured.repackSize || 'Xem thông tin dung lượng'}
+                  {featured.repackSize || t('Xem thông tin dung lượng')}
                   <span />
                   Windows
                   <span />
@@ -406,36 +448,36 @@ export function App() {
                     onClick={() =>
                       void perform(
                         () => api.startDownload(featured.url, 0),
-                        'Đã thêm game vào hàng đợi tải.',
+                        t('Đã thêm game vào hàng đợi tải.'),
                       )
                     }
                   >
                     <DownloadIcon />
-                    Tải game
+                    {t('Tải game')}{' '}
                   </button>
                   <button className="ghost" onClick={() => void openDetail(featured)}>
-                    Xem chi tiết <ArrowRight />
+                    {t('Xem chi tiết')} <ArrowRight />
                   </button>
                 </div>
               </div>
               <div className="hero-cover">
                 <Cover game={featured} />
               </div>
-              <span className="hero-caption">TỰA GAME MỚI NHẤT</span>
+              <span className="hero-caption">{t('TỰA GAME MỚI NHẤT')}</span>
             </section>
           )}
           <section className="catalog-section">
             <div className="section-heading">
               <div>
                 <span className="eyebrow">
-                  {page === 'favorites' ? 'BỘ SƯU TẬP CỦA BẠN' : 'THƯ VIỆN GAME'}
+                  {page === 'favorites' ? t('BỘ SƯU TẬP CỦA BẠN') : t('THƯ VIỆN GAME')}
                 </span>
                 <h2>
                   {page === 'favorites'
-                    ? 'Để dành cho lần chơi tới.'
+                    ? t('Để dành cho lần chơi tới.')
                     : search
-                      ? `Kết quả cho “${search}”`
-                      : 'Hành trình tiếp theo.'}
+                      ? t('Kết quả cho “{0}”', { '0': search })
+                      : t('Hành trình tiếp theo.')}
                 </h2>
               </div>
               {page === 'library' && (
@@ -443,15 +485,15 @@ export function App() {
                   <label className="search">
                     <Search />
                     <input
-                      aria-label="Tìm game"
-                      placeholder="Tìm tựa game…"
+                      aria-label={t('Tìm game')}
+                      placeholder={t('Tìm tựa game…')}
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                     />
                     {query && (
                       <button
                         className="icon-button"
-                        aria-label="Xóa tìm kiếm"
+                        aria-label={t('Xóa tìm kiếm')}
                         onClick={() => setQuery('')}
                       >
                         <X />
@@ -461,7 +503,7 @@ export function App() {
                   <button
                     className="icon-button outlined"
                     disabled={loading}
-                    aria-label="Cập nhật danh sách"
+                    aria-label={t('Cập nhật danh sách')}
                     onClick={() => void loadCatalog(true)}
                   >
                     <RefreshCw className={loading ? 'spin' : ''} />
@@ -472,23 +514,23 @@ export function App() {
             {page === 'library' && catalog?.warning && (
               <div className="banner">
                 <Wifi />
-                <span>{catalog.warning}</span>
+                <span>{t(catalog.warning)}</span>
                 <button className="text-button" onClick={() => setPage('settings')}>
-                  Cài đặt mạng
+                  {t('Cài đặt mạng')}{' '}
                 </button>
               </div>
             )}
             {catalogError && page === 'library' ? (
               <div className="empty">
                 <Wifi />
-                <h3>Chưa kết nối được nguồn</h3>
-                <p>{catalogError}</p>
+                <h3>{t('Chưa kết nối được nguồn')}</h3>
+                <p>{t(catalogError)}</p>
                 <div className="button-row">
                   <button className="primary" onClick={() => void loadCatalog(true)}>
-                    Thử lại
+                    {t('Thử lại')}{' '}
                   </button>
                   <button className="secondary" onClick={() => setPage('settings')}>
-                    Cài đặt mạng
+                    {t('Cài đặt mạng')}{' '}
                   </button>
                 </div>
               </div>
@@ -502,13 +544,13 @@ export function App() {
                         className={genre === value ? 'active' : ''}
                         onClick={() => setGenre(value)}
                       >
-                        {value}
+                        {value === '__all__' ? t('Tất cả') : value}
                       </button>
                     ))}
                   </div>
                   <span className="subtle">
-                    {catalog?.cached && page === 'library' ? 'Đã lưu cục bộ · ' : ''}
-                    {displayed.length} game
+                    {catalog?.cached && page === 'library' ? t('Đã lưu cục bộ · ') : ''}
+                    {displayed.length} {t('game')}
                   </span>
                 </div>
                 {loading && page === 'library' ? (
@@ -527,12 +569,14 @@ export function App() {
                   <div className="empty">
                     <Gamepad2 />
                     <h3>
-                      {page === 'favorites' ? 'Chưa có game yêu thích' : 'Không tìm thấy game'}
+                      {page === 'favorites'
+                        ? t('Chưa có game yêu thích')
+                        : t('Không tìm thấy game')}
                     </h3>
                     <p>
                       {page === 'favorites'
-                        ? 'Bấm biểu tượng trái tim trên game để lưu vào đây.'
-                        : 'Thử tên game khác hoặc chọn “Tất cả”.'}
+                        ? t('Bấm biểu tượng trái tim trên game để lưu vào đây.')
+                        : t('Thử tên game khác hoặc chọn “Tất cả”.')}
                     </p>
                   </div>
                 )}
@@ -546,16 +590,15 @@ export function App() {
                   onClick={() => setNumber((n) => n - 1)}
                 >
                   <ChevronLeft />
-                  Trước
+                  {t('Trước')}{' '}
                 </button>
-                <span>Trang {number}</span>
+                <span>{t('Trang {0}', { 0: number })}</span>
                 <button
                   className="secondary"
                   disabled={!catalog?.hasNext || loading}
                   onClick={() => setNumber((n) => n + 1)}
                 >
-                  Tiếp
-                  <ChevronRight />
+                  {t('Tiếp')} <ChevronRight />
                 </button>
               </div>
             )}
@@ -567,9 +610,9 @@ export function App() {
         <main className="content-page">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">BỘ TẢI TÍCH HỢP</span>
-              <h1>Đang tải</h1>
-              <p>Tiến độ được lưu tự động để tiếp tục ở lần mở sau.</p>
+              <span className="eyebrow">{t('BỘ TẢI TÍCH HỢP')}</span>
+              <h1>{t('Đang tải')}</h1>
+              <p>{t('Tiến độ được lưu tự động để tiếp tục ở lần mở sau.')}</p>
             </div>
             <div className="button-row">
               <button
@@ -578,7 +621,7 @@ export function App() {
                 onClick={() => void perform(() => api.importTorrent())}
               >
                 <Plus />
-                File torrent
+                {t('File torrent')}
               </button>
               <button
                 className="primary"
@@ -593,21 +636,20 @@ export function App() {
           <div className="download-summary">
             <span>
               <DownloadIcon />
-              {active.length} tác vụ chưa hoàn tất
+              {t('{0} tác vụ chưa hoàn tất', { 0: active.length })}
             </span>
             <span>{rate(downloads.items.reduce((sum, d) => sum + (d.downloadRate || 0), 0))}</span>
             <span className="subtle">
-              {downloads.items.filter((d) => d.finished).length} hoàn tất
+              {t('{0} hoàn tất', { 0: downloads.items.filter((d) => d.finished).length })}
             </span>
           </div>
           {!downloads.items.length ? (
             <div className="empty">
               <DownloadIcon />
-              <h3>Hàng đợi đang trống</h3>
-              <p>Chọn game trong Khám phá hoặc thêm magnet/file torrent.</p>
+              <h3>{t('Hàng đợi đang trống')}</h3>
+              <p>{t('Chọn game trong Khám phá hoặc thêm magnet/file torrent.')}</p>
               <button className="primary" onClick={() => setPage('library')}>
-                Khám phá game
-                <ArrowRight />
+                {t('Khám phá game')} <ArrowRight />
               </button>
             </div>
           ) : (
@@ -620,13 +662,13 @@ export function App() {
                       <h3>{shortTitle(item.title)}</h3>
                       <span className={item.finished ? 'complete-label' : 'status-label'}>
                         {item.finished && <Check />}
-                        {status(item)}
+                        {status(item, t)}
                       </span>
                     </div>
                     <div
                       className="progress"
                       role="progressbar"
-                      aria-label={`Tiến độ ${item.title}`}
+                      aria-label={t('Tiến độ {0}', { '0': item.title })}
                       aria-valuenow={Math.round(percent(item))}
                       aria-valuemin={0}
                       aria-valuemax={100}
@@ -638,16 +680,17 @@ export function App() {
                         {percent(item).toFixed(1)}% · {bytes(item.downloaded)} / {bytes(item.total)}
                       </span>
                       <span>
-                        {rate(item.downloadRate)} · {item.peers || 0} peer · Còn {eta(item)}
+                        {rate(item.downloadRate)} ·{' '}
+                        {t('{0} peer · Còn {1}', { 0: item.peers || 0, 1: eta(item, t) })}
                       </span>
                     </div>
-                    {item.error && <p className="error-text">{item.error}</p>}
+                    {item.error && <p className="error-text">{t(item.error)}</p>}
                     <p className="path-text">{item.savePath}</p>
                   </div>
                   <div className="download-actions">
                     <button
                       className="icon-button"
-                      aria-label={item.paused ? 'Tiếp tục tải' : 'Tạm dừng tải'}
+                      aria-label={item.paused ? t('Tiếp tục tải') : t('Tạm dừng tải')}
                       disabled={busy || !downloads.engineReady || Boolean(item.error)}
                       onClick={() => void perform(() => api.pauseDownload(item.id, !item.paused))}
                     >
@@ -655,7 +698,7 @@ export function App() {
                     </button>
                     <button
                       className="icon-button"
-                      aria-label={`Chọn file ${item.title}`}
+                      aria-label={t('Chọn file {0}', { '0': item.title })}
                       disabled={!item.metadata || !downloads.engineReady}
                       onClick={() => void loadFiles(item)}
                     >
@@ -663,14 +706,14 @@ export function App() {
                     </button>
                     <button
                       className="icon-button"
-                      aria-label={`Mở thư mục ${item.title}`}
+                      aria-label={t('Mở thư mục {0}', { '0': item.title })}
                       onClick={() => void perform(() => api.openFolder(item.id))}
                     >
                       <FolderOpen />
                     </button>
                     <button
                       className="icon-button danger"
-                      aria-label={`Bỏ tác vụ ${item.title}`}
+                      aria-label={t('Bỏ tác vụ {0}', { '0': item.title })}
                       onClick={() => setRemove(item)}
                     >
                       <Trash2 />
@@ -687,8 +730,8 @@ export function App() {
         <main className="content-page settings-page">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">THEO CÁCH CỦA BẠN</span>
-              <h1>Cài đặt</h1>
+              <span className="eyebrow">{t('THEO CÁCH CỦA BẠN')}</span>
+              <h1>{t('Cài đặt')}</h1>
             </div>
             <span className="version">GameNest {version}</span>
           </div>
@@ -696,23 +739,45 @@ export function App() {
             <section className="settings-panel">
               <div className="panel-heading">
                 <FolderOpen />
-                <h2>Lưu trữ & tải xuống</h2>
+                <h2>{t('Lưu trữ & tải xuống')}</h2>
               </div>
               <label className="field">
-                <span>Thư mục tải mặc định</span>
+                <span>{t('Ngôn ngữ')}</span>
+                <select
+                  value={language}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void perform(async () => {
+                      const next = event.target.value as Settings['language'];
+                      const value = await api.saveSettings({
+                        ...(settings ?? draft),
+                        language: next,
+                      });
+                      setSettings(value);
+                      setDraft((current) => (current ? { ...current, language: next } : value));
+                      setLanguage(next);
+                    })
+                  }
+                >
+                  <option value="en">English</option>
+                  <option value="vi">Tiếng Việt</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>{t('Thư mục tải mặc định')}</span>
                 <div className="folder-field">
                   <input readOnly value={draft.downloadPath} />
                   <button
                     className="secondary"
                     onClick={() => void perform(() => chooseFolder('draft'))}
                   >
-                    Chọn thư mục
+                    {t('Chọn thư mục')}{' '}
                   </button>
                 </div>
               </label>
               <div className="fields-row">
                 <label className="field">
-                  <span>Tải đồng thời</span>
+                  <span>{t('Tải đồng thời')}</span>
                   <input
                     type="number"
                     min={1}
@@ -722,7 +787,7 @@ export function App() {
                   />
                 </label>
                 <label className="field">
-                  <span>Giới hạn tải · KiB/s</span>
+                  <span>{t('Giới hạn tải · KiB/s')}</span>
                   <input
                     type="number"
                     min={0}
@@ -731,7 +796,7 @@ export function App() {
                   />
                 </label>
                 <label className="field">
-                  <span>Giới hạn upload · KiB/s</span>
+                  <span>{t('Giới hạn upload · KiB/s')}</span>
                   <input
                     type="number"
                     min={0}
@@ -740,11 +805,11 @@ export function App() {
                   />
                 </label>
               </div>
-              <p className="field-hint">Nhập 0 để không giới hạn tốc độ.</p>
+              <p className="field-hint">{t('Nhập 0 để không giới hạn tốc độ.')}</p>
               <label className="toggle-field">
                 <span>
-                  <b>Tiếp tục seed sau khi tải xong</b>
-                  <small>Chia sẻ dữ liệu với các peer khác.</small>
+                  <b>{t('Tiếp tục seed sau khi tải xong')}</b>
+                  <small>{t('Chia sẻ dữ liệu với các peer khác.')}</small>
                 </span>
                 <input
                   type="checkbox"
@@ -754,8 +819,8 @@ export function App() {
               </label>
               <label className="toggle-field">
                 <span>
-                  <b>Thu xuống khay hệ thống khi đóng cửa sổ</b>
-                  <small>Bộ tải tiếp tục chạy. Chọn Thoát trong menu khay để dừng.</small>
+                  <b>{t('Thu xuống khay hệ thống khi đóng cửa sổ')}</b>
+                  <small>{t('Bộ tải tiếp tục chạy. Chọn Thoát trong menu khay để dừng.')}</small>
                 </span>
                 <input
                   type="checkbox"
@@ -767,12 +832,62 @@ export function App() {
             <section className="settings-panel">
               <div className="panel-heading">
                 <ShieldCheck />
-                <h2>Kết nối nguồn game</h2>
+                <h2>{t('Kết nối nguồn game')}</h2>
               </div>
+              <label className="field">
+                <span>{t('Chế độ kết nối')}</span>
+                <select
+                  value={draft.networkMode}
+                  onChange={(e) =>
+                    setDraft({ ...draft, networkMode: e.target.value as Settings['networkMode'] })
+                  }
+                >
+                  <option value="auto">{t('Tự động · Đề xuất')}</option>
+                  <option value="direct">{t('Kết nối trực tiếp')}</option>
+                  <option value="proxy">{t('Luôn dùng proxy')}</option>
+                </select>
+              </label>
+              <p className="field-hint">
+                {t(
+                  'Tự động thử mạng trực tiếp, rồi dùng proxy khi nguồn game bị chặn hoặc không phản hồi. Áp dụng cho danh mục và ảnh game.',
+                )}{' '}
+              </p>
+              {connection && (
+                <div className="network-status" role="status">
+                  <span>
+                    WARP:{' '}
+                    {connection.warpConnected
+                      ? connection.warpProxyMode
+                        ? t('Proxy cục bộ')
+                        : t('VPN toàn máy')
+                      : connection.warpInstalled
+                        ? t('Chưa kết nối')
+                        : t('Chưa cài đặt')}
+                  </span>
+                  <span>Proxy: {connection.proxyReady ? t('Sẵn sàng') : t('Chưa kết nối')}</span>
+                  <span>
+                    {t('Lần truy cập gần nhất:')}{' '}
+                    {connection.route === 'proxy' ? 'Proxy' : t('Trực tiếp')}
+                  </span>
+                </div>
+              )}
               <label className="toggle-field">
                 <span>
-                  <b>DNS mã hóa qua Cloudflare</b>
-                  <small>Có thể hữu ích khi lỗi phân giải tên miền. Không thay thế WARP.</small>
+                  <b>{t('Tự quản lý WARP')}</b>
+                  <small>{t('Cần cài và mở Cloudflare WARP một lần. Dùng proxy localhost.')}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={draft.manageWarp}
+                  onChange={(e) => setDraft({ ...draft, manageWarp: e.target.checked })}
+                />
+              </label>
+              <label className="toggle-field">
+                <span>
+                  <b>{t('DNS mã hóa qua Cloudflare')}</b>
+                  <small>
+                    {t('Có thể hữu ích khi lỗi phân giải tên miền. Không thay thế WARP.')}
+                  </small>
                 </span>
                 <input
                   type="checkbox"
@@ -781,17 +896,42 @@ export function App() {
                 />
               </label>
               <label className="field">
-                <span>Proxy cho crawler · Không bắt buộc</span>
+                <span>{t('Địa chỉ proxy HTTP / SOCKS5')}</span>
                 <input
-                  placeholder="http://127.0.0.1:7890"
+                  placeholder="http://127.0.0.1:40000"
                   value={draft.proxyRules}
                   onChange={(e) => setDraft({ ...draft, proxyRules: e.target.value })}
                 />
               </label>
               <p className="field-hint">
-                Hỗ trợ HTTP/SOCKS5 không xác thực. Để trống để dùng cấu hình hệ thống. Proxy này áp
-                dụng cho crawler; kết nối peer của bộ tải dùng mạng hệ thống.
+                {t(
+                  'Để trống dùng http://127.0.0.1:40000 của WARP. Proxy ngoài: tắt Tự quản lý WARP. Không hỗ trợ xác thực. Peer và tracker torrent dùng mạng hệ thống.',
+                )}{' '}
               </p>
+              {draft.manageWarp && draft.networkMode !== 'direct' && (
+                <>
+                  <p className="field-hint">
+                    {t('Chuẩn bị WARP sẽ chuyển WARP từ VPN toàn máy sang proxy cục bộ.')}{' '}
+                  </p>
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void perform(async () => {
+                        const value = await api.saveSettings(draft);
+                        setSettings(value);
+                        setDraft(value);
+                        const result = await api.prepareNetwork();
+                        setMessage(result.message);
+                        setConnection(await api.networkStatus());
+                      })
+                    }
+                  >
+                    <ShieldCheck />
+                    {t('Chuẩn bị WARP')}{' '}
+                  </button>
+                </>
+              )}
               <button
                 className="secondary"
                 disabled={busy}
@@ -801,16 +941,17 @@ export function App() {
                     setSettings(value);
                     const result = await api.testConnection();
                     setMessage(result.message);
+                    setConnection(await api.networkStatus());
                   })
                 }
               >
                 <Wifi />
-                Lưu & kiểm tra kết nối
+                {t('Lưu & kiểm tra kết nối')}{' '}
               </button>
             </section>
           </div>
           <div className="settings-footer">
-            <span className="subtle">Thay đổi thư mục chỉ áp dụng cho tác vụ tải mới.</span>
+            <span className="subtle">{t('Thay đổi thư mục chỉ áp dụng cho tác vụ tải mới.')}</span>
             <button
               className="primary"
               disabled={busy}
@@ -818,11 +959,11 @@ export function App() {
                 void perform(async () => {
                   const value = await api.saveSettings(draft);
                   setSettings(value);
-                }, 'Đã lưu cài đặt.')
+                }, t('Đã lưu cài đặt.'))
               }
             >
               <Check />
-              Lưu cài đặt
+              {t('Lưu cài đặt')}{' '}
             </button>
           </div>
         </main>
@@ -831,10 +972,11 @@ export function App() {
       <footer className="app-footer">
         <span>
           <i className="source-dot" />
-          Nguồn: FitGirl Repacks
+          {t('Nguồn: FitGirl Repacks')}{' '}
         </span>
         <span>
-          Tải trực tiếp bằng libtorrent<span className="footer-separator">/</span>Windows
+          {t('Tải trực tiếp bằng libtorrent')}
+          <span className="footer-separator">/</span>Windows
         </span>
       </footer>
       {active[0] && page !== 'downloads' && (
@@ -844,7 +986,7 @@ export function App() {
             <div>
               <b>{shortTitle(active[0].title)}</b>
               <span>
-                {status(active[0])} · {percent(active[0]).toFixed(1)}% ·{' '}
+                {status(active[0], t)} · {percent(active[0]).toFixed(1)}% ·{' '}
                 {rate(active[0].downloadRate)}
               </span>
             </div>
@@ -854,7 +996,7 @@ export function App() {
           </button>
           <button
             className="icon-button"
-            aria-label={active[0].paused ? 'Tiếp tục tải' : 'Tạm dừng tải'}
+            aria-label={active[0].paused ? t('Tiếp tục tải') : t('Tạm dừng tải')}
             disabled={busy || !downloads.engineReady}
             onClick={() => void perform(() => api.pauseDownload(active[0].id, !active[0].paused))}
           >
@@ -865,7 +1007,7 @@ export function App() {
 
       {detailLoading && (
         <Modal
-          title="Đang đọc thông tin game"
+          title={t('Đang đọc thông tin game')}
           close={() => {
             detailRequest.current++;
             setDetailLoading(false);
@@ -873,12 +1015,12 @@ export function App() {
         >
           <div className="empty">
             <LoaderCircle className="spin" />
-            <p>Đang lấy thông tin từ nguồn…</p>
+            <p>{t('Đang lấy thông tin từ nguồn…')}</p>
           </div>
         </Modal>
       )}
       {selected && (
-        <Modal title="Chi tiết game" close={() => setSelected(null)} wide>
+        <Modal title={t('Chi tiết game')} close={() => setSelected(null)} wide>
           <div className="detail-top">
             <Cover game={selected} />
             <div>
@@ -887,10 +1029,12 @@ export function App() {
               <p>{selected.genres.join(' · ')}</p>
               <div className="detail-facts">
                 <span>
-                  Dung lượng tải<b>{selected.repackSize || 'Chưa có thông tin'}</b>
+                  {t('Dung lượng tải')}
+                  <b>{selected.repackSize || t('Chưa có thông tin')}</b>
                 </span>
                 <span>
-                  Dung lượng gốc<b>{selected.originalSize || 'Chưa có thông tin'}</b>
+                  {t('Dung lượng gốc')}
+                  <b>{selected.originalSize || t('Chưa có thông tin')}</b>
                 </span>
               </div>
               <button
@@ -907,7 +1051,7 @@ export function App() {
             {selected.magnets.length > 0 ? (
               <>
                 <label className="field">
-                  <span>Nguồn torrent</span>
+                  <span>{t('Nguồn torrent')}</span>
                   <select
                     value={magnetIndex}
                     onChange={(e) => setMagnetIndex(Number(e.target.value))}
@@ -927,16 +1071,18 @@ export function App() {
                       await api.startDownload(selected.url, magnetIndex);
                       setSelected(null);
                       setPage('downloads');
-                    }, 'Đã thêm vào hàng đợi tải.')
+                    }, t('Đã thêm vào hàng đợi tải.'))
                   }
                 >
                   <DownloadIcon />
-                  Tải game
+                  {t('Tải game')}{' '}
                 </button>
               </>
             ) : (
               <p className="error-text">
-                Trang này chưa có magnet trực tiếp. Có thể thêm file .torrent trong mục Đang tải.
+                {t(
+                  'Trang này chưa có magnet trực tiếp. Có thể thêm file .torrent trong mục Đang tải.',
+                )}{' '}
               </p>
             )}
             <button
@@ -944,18 +1090,18 @@ export function App() {
               onClick={() => void perform(() => favorite(selected))}
             >
               <Heart />
-              {inFavorites(selected) ? 'Đã lưu' : 'Yêu thích'}
+              {inFavorites(selected) ? t('Đã lưu') : t('Yêu thích')}
             </button>
           </div>
           {selected.description && (
             <section className="detail-description">
-              <h3>Về tựa game</h3>
+              <h3>{t('Về tựa game')}</h3>
               <p>{selected.description}</p>
             </section>
           )}
           {selected.features.length > 0 && (
             <section className="detail-description">
-              <h3>Thông tin bản repack</h3>
+              <h3>{t('Thông tin bản repack')}</h3>
               <ul>
                 {selected.features.map((feature) => (
                   <li key={feature}>{feature}</li>
@@ -966,7 +1112,7 @@ export function App() {
         </Modal>
       )}
       {magnetOpen && (
-        <Modal title="Thêm magnet" close={() => setMagnetOpen(false)}>
+        <Modal title={t('Thêm magnet')} close={() => setMagnetOpen(false)}>
           <label className="field">
             <span>Magnet link</span>
             <textarea
@@ -976,7 +1122,9 @@ export function App() {
               onChange={(e) => setMagnet(e.target.value)}
             />
           </label>
-          <p className="field-hint">Lưu tại {settings?.downloadPath}</p>
+          <p className="field-hint">
+            {t('Lưu tại')} {settings?.downloadPath}
+          </p>
           <button
             className="primary"
             disabled={busy || !magnet.trim()}
@@ -985,21 +1133,21 @@ export function App() {
                 await api.addMagnet(magnet.trim());
                 setMagnet('');
                 setMagnetOpen(false);
-              }, 'Đã thêm torrent.')
+              }, t('Đã thêm torrent.'))
             }
           >
             <DownloadIcon />
-            Bắt đầu tải
+            {t('Bắt đầu tải')}{' '}
           </button>
         </Modal>
       )}
       {remove && (
-        <Modal title="Bỏ tác vụ tải?" close={() => setRemove(null)}>
+        <Modal title={t('Bỏ tác vụ tải?')} close={() => setRemove(null)}>
           <p>{shortTitle(remove.title)}</p>
-          <p>Dữ liệu đã tải vẫn được giữ trong thư mục. Tác vụ sẽ bị gỡ khỏi hàng đợi.</p>
+          <p>{t('Dữ liệu đã tải vẫn được giữ trong thư mục. Tác vụ sẽ bị gỡ khỏi hàng đợi.')}</p>
           <div className="button-row">
             <button className="secondary" onClick={() => setRemove(null)}>
-              Giữ lại
+              {t('Giữ lại')}{' '}
             </button>
             <button
               className="primary destructive"
@@ -1011,13 +1159,13 @@ export function App() {
                 })
               }
             >
-              Bỏ tác vụ
+              {t('Bỏ tác vụ')}{' '}
             </button>
           </div>
         </Modal>
       )}
       {filesFor && (
-        <Modal title="Chọn file tải" close={() => setFilesFor(null)} wide>
+        <Modal title={t('Chọn file tải')} close={() => setFilesFor(null)} wide>
           <p>{shortTitle(filesFor.title)}</p>
           {filesLoading ? (
             <div className="empty">
@@ -1030,10 +1178,10 @@ export function App() {
                   className="text-button"
                   onClick={() => setChosen(new Set(files.map((f) => f.index)))}
                 >
-                  Chọn tất cả
+                  {t('Chọn tất cả')}{' '}
                 </button>
                 <span className="subtle">
-                  {chosen.size}/{files.length} file ·{' '}
+                  {chosen.size}/{files.length} {t('file')} ·{' '}
                   {bytes(
                     files.filter((f) => chosen.has(f.index)).reduce((sum, f) => sum + f.size, 0),
                   )}
@@ -1066,18 +1214,18 @@ export function App() {
                   void perform(async () => {
                     await api.selectFiles(filesFor.id, [...chosen]);
                     setFilesFor(null);
-                  }, 'Đã cập nhật các file cần tải.')
+                  }, t('Đã cập nhật các file cần tải.'))
                 }
               >
                 <Check />
-                Áp dụng lựa chọn
+                {t('Áp dụng lựa chọn')}{' '}
               </button>
             </>
           ) : (
             <div className="empty">
-              <p>Chưa có metadata để liệt kê file.</p>
+              <p>{t('Chưa có metadata để liệt kê file.')}</p>
               <button className="secondary" onClick={() => void loadFiles(filesFor)}>
-                Đọc lại
+                {t('Đọc lại')}{' '}
               </button>
             </div>
           )}

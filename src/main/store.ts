@@ -3,22 +3,64 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { DownloadRecord, Game, Settings } from '../shared/types';
 
-export const settingsSchema = z.object({
-  downloadPath: z.string().min(1).max(4096),
-  secureDns: z.boolean(),
-  proxyRules: z
-    .string()
-    .max(2048)
-    .refine(
-      (s) => !s || /^(https?|socks5):\/\/[^\s/@]+:\d{1,5}$/.test(s),
-      'Proxy phải có dạng http://host:port hoặc socks5://host:port.',
-    ),
-  maxDownloads: z.number().int().min(1).max(10),
-  downloadLimit: z.number().int().min(0).max(1048576),
-  uploadLimit: z.number().int().min(0).max(1048576),
-  seedAfterDownload: z.boolean(),
-  closeToTray: z.boolean(),
-});
+export const settingsSchema = z
+  .object({
+    language: z.enum(['en', 'vi']).default('en'),
+    downloadPath: z.string().min(1).max(4096),
+    secureDns: z.boolean(),
+    networkMode: z.enum(['auto', 'direct', 'proxy']).default('auto'),
+    manageWarp: z.boolean().default(true),
+    proxyRules: z
+      .string()
+      .max(2048)
+      .refine(
+        (s) =>
+          !s ||
+          (() => {
+            try {
+              const u = new URL(s);
+              return (
+                ['http:', 'https:', 'socks5:'].includes(u.protocol) &&
+                !u.username &&
+                !u.password &&
+                !u.search &&
+                !u.hash &&
+                ['', '/'].includes(u.pathname) &&
+                Number(
+                  u.port || (u.protocol === 'https:' ? 443 : u.protocol === 'http:' ? 80 : 0),
+                ) > 0 &&
+                Number(u.port) <= 65535
+              );
+            } catch {
+              return false;
+            }
+          })(),
+        'Proxy phải có dạng http://host:port hoặc socks5://host:port.',
+      ),
+    maxDownloads: z.number().int().min(1).max(10),
+    downloadLimit: z.number().int().min(0).max(1048576),
+    uploadLimit: z.number().int().min(0).max(1048576),
+    seedAfterDownload: z.boolean(),
+    closeToTray: z.boolean(),
+  })
+  .refine(
+    (value) =>
+      !value.manageWarp ||
+      !value.proxyRules ||
+      (() => {
+        let u: URL;
+        try {
+          u = new URL(value.proxyRules);
+        } catch {
+          return false;
+        }
+        return (
+          ['http:', 'socks5:'].includes(u.protocol) &&
+          ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)
+        );
+      })(),
+    'WARP tự động chỉ dùng proxy HTTP/SOCKS5 tại localhost.',
+  );
 
 export const gameSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{16}$/),
@@ -70,8 +112,11 @@ export class Store {
   ) {
     mkdirSync(directory, { recursive: true });
     const defaults: Settings = {
+      language: 'en',
       downloadPath: join(downloadsDirectory, 'GameNest'),
       secureDns: false,
+      networkMode: 'auto',
+      manageWarp: true,
       proxyRules: '',
       maxDownloads: 2,
       downloadLimit: 0,
@@ -79,9 +124,12 @@ export class Store {
       seedAfterDownload: false,
       closeToTray: true,
     };
-    const saved = settingsSchema.safeParse(
-      readJson(join(directory, 'settings.json'), defaults, true),
-    );
+    const previous = readJson<Settings>(join(directory, 'settings.json'), defaults, true);
+    if (!previous.networkMode && previous.proxyRules) {
+      previous.networkMode = 'proxy';
+      previous.manageWarp = false;
+    }
+    const saved = settingsSchema.safeParse(previous);
     this.settings = saved.success ? saved.data : defaults;
     this.downloads = z
       .array(downloadSchema)

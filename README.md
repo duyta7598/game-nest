@@ -11,7 +11,7 @@ App Electron + React dành cho Windows, giao diện Điện ảnh. Catalog lấy
 - Giới hạn tốc độ, số tác vụ đồng thời, tùy chọn seed, chạy trong khay hệ thống.
 - Lưu danh sách tác vụ, lựa chọn file và resume data; khôi phục khi mở lại.
 - Cache catalog 1 giờ, chi tiết 24 giờ; request HTML nối tiếp cách nhau tối thiểu 1,5 giây. Khi nguồn lỗi, catalog đã lưu vẫn hiển thị cùng thông báo.
-- DNS mã hóa Cloudflare và proxy HTTP/SOCKS5 không xác thực cho crawler.
+- DNS mã hóa Cloudflare, tự chuyển proxy HTTP/SOCKS5 và quản lý WARP cục bộ.
 - Renderer sandboxed, IPC được kiểm tra, nội dung từ nguồn chỉ hiển thị dạng văn bản và ảnh.
 
 ## Chạy development
@@ -70,7 +70,7 @@ npm run test:desktop
 
 ## Mạng và dữ liệu
 
-Proxy trong Cài đặt chỉ áp dụng cho crawler. Kết nối peer của libtorrent dùng đường mạng hệ thống; nếu cần WARP/VPN cho torrent, phải cấu hình ở hệ điều hành. DNS mã hóa không thay thế VPN khi mạng chặn IP hoặc HTTPS. Ảnh bìa tải qua phiên renderer và có thể bị chặn riêng bởi mạng/host ảnh.
+Proxy trong Cài đặt áp dụng cho crawler và ảnh bìa theo tuyến danh mục gần nhất. Kết nối peer/tracker của libtorrent dùng đường mạng hệ thống; nếu cần VPN cho torrent, cấu hình ở hệ điều hành. DNS mã hóa không thay thế VPN khi mạng chặn IP hoặc HTTPS.
 
 Crawler hiện lấy magnet trực tiếp trong bài. Chưa xử lý các trang trung gian hoặc link `.torrent` được mã hóa trên dịch vụ paste; vẫn có thể nhập file torrent thủ công. App chỉ tải dữ liệu, chưa tự chạy trình cài game.
 
@@ -88,3 +88,15 @@ Dữ liệu người dùng nằm ở thư mục `userData` của Electron (`%APP
 ## Trạng thái xác minh
 
 Đã kiểm tra trên macOS arm64: typecheck, formatter/linter, 12 test tự động, truyền torrent nội bộ và luồng Electron với dữ liệu nguồn thật. Chưa kiểm tra tải game lớn hoặc build/chạy bản Windows.
+
+### Kết nối mạng
+
+Trong Cài đặt → Kết nối nguồn game, chọn Tự động để thử mạng trực tiếp rồi chuyển sang proxy khi gặp lỗi mạng, timeout hoặc HTTP 403/451/502/503/504. Kết nối proxy thành công được ghi nhớ trong 10 phút. Chế độ Luôn dùng proxy sẽ báo lỗi nếu proxy không sẵn sàng.
+
+Mặc định dùng WARP localhost `http://127.0.0.1:40000`. Cần cài và mở Cloudflare WARP một lần. Nút Chuẩn bị WARP hoặc lần truy cập cần proxy khi bật Tự quản lý WARP sẽ chuyển WARP sang chế độ proxy cục bộ, thay cho VPN toàn máy. Proxy ngoài hỗ trợ HTTP/HTTPS/SOCKS5 không xác thực; tắt Tự quản lý WARP trước khi dùng.
+
+Danh mục đi qua tuyến đã chọn; ảnh game theo tuyến danh mục gần nhất. Peer và tracker libtorrent vẫn dùng mạng hệ thống. Kiểm tra kết nối hiển thị tuyến thực tế và trạng thái WARP/proxy.
+
+### Ngôn ngữ giao diện
+
+Mặc định là English, kể cả cấu hình cũ chưa có lựa chọn ngôn ngữ. Đổi tại Settings → Language / Cài đặt → Ngôn ngữ. Lựa chọn được lưu ngay và áp dụng cho giao diện, thông báo, hộp thoại và menu khay. Nội dung từ FitGirl giữ nguyên ngôn ngữ nguồn.

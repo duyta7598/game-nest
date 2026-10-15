@@ -21,7 +21,7 @@ try {
   desktop = await launch();
   let page = await desktop.firstWindow();
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.getByRole('button', { name: 'Cài đặt', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor();
   const boot = await page.evaluate(() => window.gamenest.bootstrap());
   assert.equal(boot.downloads.engineReady, true, boot.downloads.engineError);
   const downloadPath = join(directory, 'payload');
@@ -34,23 +34,23 @@ try {
   const cards = await page.locator('.game-card').count();
   assert.ok(cards > 0);
   await page.locator('.game-card .game-title').first().click();
-  await page.getByRole('dialog', { name: 'Chi tiết game' }).waitFor({ timeout: 40000 });
+  await page.getByRole('dialog', { name: 'Game details' }).waitFor({ timeout: 40000 });
   const detailText = await page.getByRole('dialog').textContent();
-  assert.ok(detailText.includes('Dung lượng tải'));
-  await page.getByRole('button', { name: 'Đóng', exact: true }).click();
+  assert.ok(detailText.includes('Download size'));
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('.game-card .save-game').first().click();
-  await page.getByRole('button', { name: 'Yêu thích', exact: true }).click();
+  await page.getByRole('button', { name: 'Favorites', exact: true }).click();
   assert.equal(await page.locator('.game-card').count(), 1);
-  await page.getByRole('button', { name: 'Cài đặt', exact: true }).click();
-  await page.getByRole('heading', { name: 'Kết nối nguồn game' }).waitFor();
-  await page.getByRole('button', { name: 'Khám phá', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('heading', { name: 'Game source connection' }).waitFor();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.locator('.hero').waitFor();
   await page.screenshot({ path: screenshot, fullPage: true });
-  await page.getByRole('textbox', { name: 'Tìm game' }).fill('Hollow Knight');
+  await page.getByRole('textbox', { name: 'Search games' }).fill('Hollow Knight');
   await page
-    .getByRole('heading', { name: 'Kết quả cho “Hollow Knight”' })
+    .getByRole('heading', { name: 'Results for “Hollow Knight”' })
     .waitFor({ timeout: 40000 });
-  await page.getByRole('button', { name: 'Xóa tìm kiếm' }).click();
+  await page.getByRole('button', { name: 'Clear search' }).click();
   await page.locator('.hero').waitFor({ timeout: 10000 });
   const payload = Buffer.alloc(32768, 71);
   const original = join(directory, 'fixture.bin');
@@ -72,7 +72,7 @@ try {
   }, torrent);
   const id = await page.evaluate(() => window.gamenest.importTorrent());
   assert.ok(id);
-  await page.getByRole('button', { name: /^Đang tải/ }).click();
+  await page.getByRole('button', { name: /^Downloads/ }).click();
   await page.locator('.download-item').waitFor();
   await page.waitForFunction(async (task) => (await window.gamenest.files(task)).length === 1, id);
   await page.evaluate((task) => window.gamenest.pauseDownload(task, true), id);
@@ -80,7 +80,7 @@ try {
   desktop = null;
   desktop = await launch();
   page = await desktop.firstWindow();
-  await page.getByRole('button', { name: 'Cài đặt', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor();
   const restored = await page.evaluate(() => window.gamenest.bootstrap());
   assert.equal(restored.favorites.length, 1);
   assert.equal(restored.downloads.items[0].id, id);
