@@ -12,7 +12,7 @@ try {
   );
   const result = spawnSync(engine, ['--self-test', directory], {
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: 45000,
   });
   assert.equal(result.status, 0, result.stdout || result.error?.message || result.stderr);
   const data = JSON.parse(result.stdout.trim());

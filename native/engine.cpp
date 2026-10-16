@@ -289,6 +289,20 @@ static int self_test(fs::path const& base) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     if (!handle.status().is_seeding) throw std::runtime_error("Local peer transfer timed out");
+    handle.flush_cache();
+    bool disk_flushed = false;
+    const auto flush_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!disk_flushed && std::chrono::steady_clock::now() < flush_deadline) {
+        std::vector<lt::alert*> alerts;
+        downloader.session.pop_alerts(&alerts);
+        for (auto* alert : alerts) {
+            if (auto* flushed = lt::alert_cast<lt::cache_flushed_alert>(alert)) {
+                if (flushed->handle == handle) disk_flushed = true;
+            }
+        }
+        if (!disk_flushed) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (!disk_flushed) throw std::runtime_error("Local torrent disk flush timed out");
     std::ifstream in(base / "download" / "fixture.bin", std::ios::binary);
     std::vector<char> received((std::istreambuf_iterator<char>(in)), {});
     if (received != payload) throw std::runtime_error("Downloaded bytes do not match");

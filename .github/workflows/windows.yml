@@ -45,8 +45,6 @@ jobs:
       - run: npm ci
       - run: npm run native:build
         if: steps.native-cache.outputs.cache-hit != 'true'
-      - run: npm run native:test
-      - run: npm test
       - uses: actions/cache/save@v4
         if: steps.native-cache.outputs.cache-hit != 'true'
         with:
@@ -57,6 +55,8 @@ jobs:
         with:
           path: .build-tools/vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      - run: npm run native:test
+      - run: npm test
       - uses: actions/upload-artifact@v4
         with:
           name: GameNest-native-Windows-x64
