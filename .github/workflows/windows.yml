@@ -70,5 +70,8 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: GameNest-Windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest*.yml
           if-no-files-found: error

@@ -1,7 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DownloadState, GameNestAPI } from '../shared/types';
+import type { UpdateStatus } from '../shared/update';
 
 const api: GameNestAPI = {
+  updateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkUpdates: () => ipcRenderer.invoke('updates:check'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdates: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: UpdateStatus) => listener(state);
+    ipcRenderer.on('updates:changed', handler);
+    return () => ipcRenderer.removeListener('updates:changed', handler);
+  },
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   catalog: (query, page, refresh) => ipcRenderer.invoke('catalog:list', query, page, refresh),
   detail: (url) => ipcRenderer.invoke('catalog:detail', url),

@@ -1,6 +1,6 @@
 {
   "name": "gamenest",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Thư viện game desktop với bộ tải libtorrent tích hợp",
   "private": true,
   "engines": {
@@ -18,10 +18,13 @@
     "native:test": "node scripts/test-native.mjs",
     "package:win": "node scripts/check-native.mjs win32 && npm run build && electron-builder --win --x64 --publish never",
     "package:mac": "node scripts/check-native.mjs darwin && npm run build && electron-builder --mac --arm64",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "package:mac:release": "node scripts/package-release.mjs mac",
+    "package:win:release": "node scripts/package-release.mjs win"
   },
   "dependencies": {
     "cheerio": "1.1.2",
+    "electron-updater": "6.8.11",
     "lucide-react": "^0.577.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -78,6 +81,14 @@
       ],
       "category": "public.app-category.utilities"
     },
-    "icon": "resources/icon.png"
+    "icon": "resources/icon.png",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "duyta7598",
+        "repo": "gamenest-releases",
+        "releaseType": "release"
+      }
+    ]
   }
 }

@@ -78,13 +78,24 @@ export class TorrentEngine {
     });
   }
 
-  async shutdown() {
+  async shutdown(strict = false) {
     const child = this.child;
     if (!child) return;
+    let timer: NodeJS.Timeout | undefined;
+    const exited = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 20000);
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
     try {
       await this.request('shutdown');
-    } catch {
+      if (!(await exited)) throw new Error('The download engine did not stop in time.');
+    } catch (error) {
+      clearTimeout(timer);
       child.kill();
+      if (strict) throw error;
     }
   }
 }

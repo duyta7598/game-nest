@@ -27,11 +27,17 @@ import { TorrentEngine } from './engine';
 import { NetworkRouter } from './network';
 import { SOURCE, sourceUrl, validMagnet } from './parser';
 import { gameSchema, Store, settingsSchema } from './store';
+import { createUpdates } from './update-runtime';
+import type { DesktopUpdates } from './updates';
 import { prepareWarp, proxyReady, warpStatus } from './warp';
 
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+let installingUpdate = false;
+let activeCommands = 0;
+let updates: DesktopUpdates;
+let updateTimer: NodeJS.Timeout | undefined;
 let pollTimer: NodeJS.Timeout | undefined;
 let store: Store;
 const engine = new TorrentEngine();
@@ -266,15 +272,44 @@ function createWindow() {
 
 function installHandlers(catalog: Catalog) {
   const handle = (name: string, fn: (...args: unknown[]) => unknown) =>
-    ipcMain.handle(name, (event, ...args) => {
+    ipcMain.handle(name, async (event, ...args) => {
       if (
         !window ||
         event.sender !== window.webContents ||
         event.senderFrame !== window.webContents.mainFrame
       )
         throw new Error('Yêu cầu không hợp lệ.');
-      return fn(...args);
+      if (installingUpdate) throw new Error('Restarting to update...');
+      const tracked = !name.startsWith('updates:') && name !== 'app:bootstrap';
+      if (tracked) activeCommands++;
+      try {
+        return await fn(...args);
+      } finally {
+        if (tracked) activeCommands--;
+      }
     });
+  handle('updates:status', () => updates.status());
+  handle('updates:check', () => updates.check());
+  handle('updates:install', async () => {
+    try {
+      return await updates.install(async () => {
+        installingUpdate = true;
+        quitting = true;
+        clearInterval(updateTimer);
+        clearInterval(pollTimer);
+        store.saveDownloads();
+        store.saveFavorites();
+        await engine.shutdown(true);
+        tray?.destroy();
+      });
+    } catch (error) {
+      if (installingUpdate) {
+        app.relaunch();
+        app.exit(1);
+      }
+      throw error;
+    }
+  });
   handle('app:bootstrap', () => ({
     settings: store.settings,
     downloads: state,
@@ -437,6 +472,22 @@ else {
           itemErrors.set(item.id, (error as Error).message);
         }
       }
+      updates = createUpdates(
+        (value) => {
+          if (value.phase === 'error' && installingUpdate) {
+            app.relaunch();
+            app.exit(1);
+            return;
+          }
+          if (window && !window.isDestroyed()) window.webContents.send('updates:changed', value);
+        },
+        () =>
+          activeCommands > 0 ||
+          store.downloads.some(
+            (item) =>
+              !item.paused && !state.items.find((status) => status.id === item.id)?.finished,
+          ),
+      );
       const catalog = new Catalog(join(store.directory, 'cache'), fetchPage);
       installHandlers(catalog);
       createWindow();
@@ -449,6 +500,9 @@ else {
       }
       await poll();
       pollTimer = setInterval(() => void poll(), 1000);
+      void updates.check();
+      updateTimer = setInterval(() => void updates.check(), 6 * 60 * 60 * 1000);
+      updateTimer.unref();
     })
     .catch((error) => {
       dialog.showErrorBox(
@@ -469,6 +523,7 @@ else {
     quitting = true;
     event.preventDefault();
     clearInterval(pollTimer);
+    clearInterval(updateTimer);
     void engine.shutdown().finally(() => {
       tray?.destroy();
       app.quit();

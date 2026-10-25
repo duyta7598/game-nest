@@ -35,7 +35,9 @@ import type {
   Settings,
   TorrentFile,
 } from '../shared/types';
+import type { UpdateStatus } from '../shared/update';
 import { LanguageProvider, useTranslation } from './i18n';
+import { UpdatePanel } from './UpdatePanel';
 
 type Page = 'library' | 'downloads' | 'favorites' | 'settings';
 const api = window.gamenest;
@@ -144,6 +146,23 @@ export function App() {
 
 function AppContent() {
   const { t, language, setLanguage } = useTranslation();
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = api.onUpdates((value) => {
+      if (active) setUpdate(value);
+    });
+    void api
+      .updateStatus()
+      .then((value) => {
+        if (active) setUpdate(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
   const [page, setPage] = useState<Page>('library');
   const [connection, setConnection] = useState<Awaited<
     ReturnType<typeof api.networkStatus>
@@ -392,6 +411,17 @@ function AppContent() {
           </button>
         </div>
       </header>
+      {update?.phase === 'ready' && page !== 'settings' && (
+        <div className="toast" role="status">
+          <RefreshCw />
+          <span>
+            {t('Update ready')} · {update.version}
+          </span>
+          <button className="text-button" onClick={() => setPage('settings')}>
+            {t('Review update')}
+          </button>
+        </div>
+      )}
       {message && (
         <div className="toast" role="status">
           <CircleAlert />
@@ -950,6 +980,7 @@ function AppContent() {
               </button>
             </section>
           </div>
+          <UpdatePanel status={update} />
           <div className="settings-footer">
             <span className="subtle">{t('Thay đổi thư mục chỉ áp dụng cho tác vụ tải mới.')}</span>
             <button

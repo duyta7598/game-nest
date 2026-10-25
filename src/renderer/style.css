@@ -1322,3 +1322,27 @@ button svg {
 .settings-panel > .secondary {
   margin: 0 8px 10px 0;
 }
+
+.update-panel {
+  margin-top: 22px;
+}
+.update-panel .button-row {
+  margin-block: 18px;
+}
+.update-panel progress {
+  width: min(100%, 460px);
+  margin-block: 14px;
+  accent-color: var(--accent);
+}
+.update-panel details {
+  margin-top: 16px;
+}
+.update-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.release-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 12px;
+}

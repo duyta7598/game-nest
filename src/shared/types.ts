@@ -1,3 +1,4 @@
+import type { UpdateStatus } from './update';
 export interface Game {
   id: string;
   title: string;
@@ -89,6 +90,10 @@ export interface Bootstrap {
 }
 
 export interface GameNestAPI {
+  updateStatus(): Promise<UpdateStatus>;
+  checkUpdates(): Promise<UpdateStatus>;
+  installUpdate(): Promise<UpdateStatus>;
+  onUpdates(listener: (state: UpdateStatus) => void): () => void;
   bootstrap(): Promise<Bootstrap>;
   catalog(query: string, page: number, refresh?: boolean): Promise<CatalogPage>;
   detail(url: string): Promise<GameDetail>;
